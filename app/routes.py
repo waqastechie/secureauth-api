@@ -5,8 +5,15 @@ from app.database import SessionLocal
 from app.models import User
 from app.schemas import UserCreate, UserResponse, UserLogin, Token
 from app.auth import hash_password, verify_password, create_access_token
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    verify_token
+)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
+security = HTTPBearer()
 
 def get_db():
     db = SessionLocal()
@@ -53,3 +60,35 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
         "access_token": access_token,
         "token_type": "bearer"
     }
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    token = credentials.credentials
+
+    email = verify_token(token)
+
+    if email is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
+
+    user = db.query(User).filter(
+        User.email == email
+    ).first()
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="User not found"
+        )
+
+    return user
+
+@router.get("/me", response_model=UserResponse)
+def get_me(
+    current_user: User = Depends(get_current_user)
+):
+    return current_user
